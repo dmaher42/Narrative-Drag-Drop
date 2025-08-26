@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="en" class="light">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Narrative Structure Sorter – Enhanced</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
+  <style>
+    :root { --bg1:#A1C4FD; --bg2:#C2E9FB; --bg3:#FBC2EB; --bg4:#A6C1EE; }
+    html, body { height:100%; margin:0; }
+    body { font-family:'Inter',system-ui,Segoe UI,Roboto,Arial,sans-serif; background: linear-gradient(-45deg,var(--bg1),var(--bg2),var(--bg3),var(--bg4)); background-size:400% 400%; animation: gradient-anim 15s ease infinite; }
+    @media (prefers-reduced-motion: reduce){ body{ animation:none; } .animated{ animation:none !important; } }
+    @keyframes gradient-anim{0%{background-position:0% 50%}50%{background-position:100% 50%}100%{background-position:0% 50%}}
+    .glass { background: rgba(255,255,255,0.2); backdrop-filter: blur(10px); border:1px solid rgba(255,255,255,0.3); box-shadow: 0 4px 12px rgba(0,0,0,.1); }
+    .drop-hover { border:3px dashed #6A79F8 !important; background-color:rgba(106,121,248,.08) !important; }
+    .good { border-color:#34D399 !important; background-color:rgba(52,211,153,.08) !important; }
+    .bad { border-color:#F87171 !important; background-color:rgba(248,113,113,.08) !important; animation: shake .35s cubic-bezier(.36,.07,.19,.97); }
+    @keyframes shake{10%,90%{transform:translate3d(-1px,0,0)}20%,80%{transform:translate3d(2px,0,0)}30%,50%,70%{transform:translate3d(-4px,0,0)}40%,60%{transform:translate3d(4px,0,0)}}
+    .floating { position:fixed; font-weight:800; font-size:1.1rem; opacity:0; animation: float-up 900ms forwards; pointer-events:none; }
+    @keyframes float-up{from{opacity:1; transform:translateY(0)} to{opacity:0; transform:translateY(-40px)}}
+    .confetti-wrap{position:fixed; inset:0; pointer-events:none; z-index:50}
+    .confetti{position:absolute; width:10px; height:10px; background:var(--c); border-radius:50%; animation: fall 2s linear forwards; opacity:0}
+    @keyframes fall{0%{transform:translateY(-10vh) rotate(0); opacity:1}100%{transform:translateY(110vh) rotate(720deg); opacity:0}}
+    .dragging { opacity:.4; }
+    .kbd{ font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col">
+  <div id="confetti" class="confetti-wrap"></div>
+
+  <!-- Header / Controls -->
+  <header class="glass sticky top-0 z-20 p-4 md:p-6 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+    <div>
+      <h1 class="text-2xl md:text-3xl font-extrabold tracking-wide text-gray-900 drop-shadow">Narrative Structure Sorter</h1>
+      <p class="text-sm text-gray-700">Drag cards into the correct stage. Keyboard: <span class="kbd">Tab</span> to focus, <span class="kbd">Enter</span>/<span class="kbd">Space</span> to pick/drop, <span class="kbd">1–5</span> to send to a bin.</p>
+    </div>
+    <div class="flex flex-wrap gap-2 items-center">
+      <label class="flex items-center gap-2 text-sm bg-white/60 rounded-lg px-3 py-2">
+        <input id="sound-toggle" type="checkbox" class="accent-blue-600"> Sound
+      </label>
+      <label class="flex items-center gap-2 text-sm bg-white/60 rounded-lg px-3 py-2">
+        <input id="reduced-toggle" type="checkbox" class="accent-blue-600"> Reduce motion
+      </label>
+      <label class="flex items-center gap-2 text-sm bg-white/60 rounded-lg px-3 py-2">
+        <input id="teacher-toggle" type="checkbox" class="accent-blue-600"> Teacher mode
+      </label>
+      <button id="export-btn" class="px-3 py-2 bg-emerald-600 text-white rounded-lg shadow hover:bg-emerald-700">Export CSV</button>
+    </div>
+  </header>
+
+  <!-- Stats / Story Pick -->
+  <section class="glass mx-4 md:mx-6 my-4 p-4 rounded-2xl grid gap-3 md:grid-cols-4">
+    <div class="font-bold text-lg">Score: <span id="score">0</span></div>
+    <div class="font-bold text-lg">Hints: <span id="hints">2</span></div>
+    <div class="font-bold text-lg">Timer: <span id="timer">0:00</span> <span class="text-xs text-gray-600">(Best: <span id="best">—</span>)</span></div>
+    <div class="flex gap-2 items-center">
+      <label class="text-sm">Story:</label>
+      <select id="story-select" class="bg-white/80 rounded-lg px-3 py-2 w-full"></select>
+    </div>
+  </section>
+
+  <!-- Main -->
+  <main class="flex-1 grid gap-4 md:gap-6 grid-rows-[auto,1fr,auto] mx-4 md:mx-6">
+    <!-- Bins -->
+    <div id="bins" class="glass p-4 md:p-6 rounded-2xl grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 md:gap-4">
+      <!-- bins injected -->
+    </div>
+
+    <!-- Cards -->
+    <section class="glass p-3 md:p-4 rounded-2xl overflow-x-auto">
+      <div class="flex items-center justify-between">
+        <h2 class="text-lg md:text-xl font-bold">Story Cards</h2>
+        <div class="flex gap-2">
+          <button id="hint-btn" class="px-3 py-2 bg-yellow-400 text-yellow-900 font-semibold rounded-lg shadow hover:bg-yellow-500">Hint</button>
+          <button id="reset-btn" class="px-3 py-2 bg-gray-200 text-gray-800 font-semibold rounded-lg shadow hover:bg-gray-300">Reset</button>
+          <button id="next-btn" class="px-3 py-2 bg-blue-600 text-white font-semibold rounded-lg shadow hover:bg-blue-700">Next Story</button>
+        </div>
+      </div>
+      <div id="card-rail" class="mt-3 flex gap-3 overflow-x-auto pb-2" aria-label="Card list" role="list"></div>
+    </section>
+
+    <!-- Custom story builder -->
+    <section class="glass p-4 rounded-2xl">
+      <details>
+        <summary class="cursor-pointer font-semibold">Add custom story (paste JSON)</summary>
+        <div class="mt-3 grid gap-3">
+          <textarea id="custom-json" class="w-full min-h-[120px] rounded-lg p-3" placeholder='{"title":"My Story","parts":[{"text":"...","type":"orientation"}]}'></textarea>
+          <div class="flex gap-2">
+            <button id="add-story-btn" class="px-3 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700">Add Story</button>
+            <p class="text-sm text-gray-700">Valid <em>type</em> values: orientation, rising-action, climax, falling-action, conclusion</p>
+          </div>
+        </div>
+      </details>
+    </section>
+  </main>
+
+  <!-- Modal -->
+  <dialog id="modal" class="glass rounded-2xl p-6 max-w-md w-[92vw]">
+    <h3 id="modal-title" class="text-xl font-bold mb-1"></h3>
+    <p id="modal-text" class="text-gray-800"></p>
+    <form method="dialog" class="mt-4 text-right">
+      <button class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Close</button>
+    </form>
+  </dialog>
+
+  <script>
+  // ===================== Data =====================
+  const STORIES = [
+    { title: "The Dragon's Plight", parts: [
+      { text:"Young Elara lived in a small, peaceful village nestled at the foot of a dormant volcano.", type:"orientation" },
+      { text:"She discovered the village's sacred water source was drying up, and a large dragon was seen crying at the volcano's peak.", type:"rising-action" },
+      { text:"Elara climbed the treacherous volcano and found the dragon was weeping because a shard of dark magic was stuck in its eye, blocking a geothermal spring.", type:"rising-action" },
+      { text:"She bravely approached the mighty beast and removed the splinter with healing herbs.", type:"climax" },
+      { text:"The geothermal spring erupted, sending a torrent of fresh water down to the village.", type:"falling-action" },
+      { text:"Elara was hailed as a hero; the dragon became a silent protector.", type:"conclusion" },
+    ]},
+    { title: "A Robot's Dream", parts: [
+      { text:"Unit 734 was a sanitation robot cleaning a futuristic city.", type:"orientation" },
+      { text:"He found a discarded painting that sparked a strange feeling.", type:"rising-action" },
+      { text:"He secretly collected art, memory banks filling with color.", type:"rising-action" },
+      { text:"A city purge flagged his collection for deletion; he had to choose duty or passion.", type:"climax" },
+      { text:"He broadcast the art to public displays across the city.", type:"falling-action" },
+      { text:"Citizens were moved; he became a curator of public art.", type:"conclusion" },
+    ]},
+    { title: "The Lonely Astronaut", parts: [
+      { text:"Kael flew a solo mission; only the ship's computer kept him company.", type:"orientation" },
+      { text:"A critical system began failing and auto-fixes didn't work.", type:"rising-action" },
+      { text:"He performed a dangerous spacewalk to repair it.", type:"climax" },
+      { text:"Alarms fell silent; the ship stabilized.", type:"falling-action" },
+      { text:"He continued the mission, confident he could face the next challenge alone.", type:"conclusion" },
+    ]},
+  ];
+
+  const STAGES = [
+    { id:"orientation", label:"Orientation \uD83D\uDCD6", key:"1", color:"text-blue-600" },
+    { id:"rising-action", label:"Rising Action \uD83D\uDE80", key:"2", color:"text-green-600" },
+    { id:"climax", label:"Climax \uD83D\uDCA5", key:"3", color:"text-red-600" },
+    { id:"falling-action", label:"Falling Action ✨", key:"4", color:"text-yellow-600" },
+    { id:"conclusion", label:"Conclusion ✅", key:"5", color:"text-purple-600" },
+  ];
+
+  // ===================== State =====================
+  let storyIndex = 0;
+  let score = 0;
+  let hints = 2;
+  let timer = 0; let timerId = null; let bestTimes = JSON.parse(localStorage.getItem('narrativeBestTimes')||'{}');
+  let holding = null; // currently picked card (for keyboard)
+  let soundOn = false; let toneStarted = false;
+
+  // ===================== Elements =====================
+  const binsWrap = document.getElementById('bins');
+  const rail = document.getElementById('card-rail');
+  const scoreEl = document.getElementById('score');
+  const hintsEl = document.getElementById('hints');
+  const timerEl = document.getElementById('timer');
+  const bestEl = document.getElementById('best');
+  const storySel = document.getElementById('story-select');
+  const modal = document.getElementById('modal');
+  const modalTitle = document.getElementById('modal-title');
+  const modalText = document.getElementById('modal-text');
+  const confetti = document.getElementById('confetti');
+
+  // Controls
+  const hintBtn = document.getElementById('hint-btn');
+  const resetBtn = document.getElementById('reset-btn');
+  const nextBtn = document.getElementById('next-btn');
+  const soundToggle = document.getElementById('sound-toggle');
+  const reducedToggle = document.getElementById('reduced-toggle');
+  const teacherToggle = document.getElementById('teacher-toggle');
+  const exportBtn = document.getElementById('export-btn');
+  const addStoryBtn = document.getElementById('add-story-btn');
+  const customJson = document.getElementById('custom-json');
+
+  // ===================== Audio =====================
+  const correctSynth = new Tone.Synth({ oscillator:{type:'triangle'}, envelope:{attack:0.005, decay:0.1, sustain:0.1, release:0.1} }).toDestination();
+  const incorrectSynth = new Tone.NoiseSynth({ envelope:{attack:0.005, decay:0.12, sustain:0} }).toDestination();
+  const successSynth = new Tone.PolySynth(Tone.Synth,{ oscillator:{type:'sine'}, envelope:{attack:0.05, decay:0.5, sustain:0.1, release:0.5} }).toDestination();
+  function startTone(){ if(toneStarted) return; Tone.start(); toneStarted = true; }
+  function playGood(){ if(!soundOn) return; startTone(); correctSynth.triggerAttackRelease('C5','8n'); }
+  function playBad(){ if(!soundOn) return; startTone(); incorrectSynth.triggerAttackRelease('16n'); }
+  function playWin(){ if(!soundOn) return; startTone(); const now = Tone.now(); successSynth.triggerAttackRelease(['C4','E4','G4'],'4n',now); successSynth.triggerAttackRelease(['C5','E5','G5'],'4n',now+0.25); }
+
+  // ===================== Utils =====================
+  const shuffle = (arr)=>{ const a=[...arr]; for(let i=a.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]];} return a };
+  const fmtTime = (s)=>{ const m=Math.floor(s/60); const r=s%60; return `${m}:${r.toString().padStart(2,'0')}` };
+  function flashText(msg, x, y, cls){ const el=document.createElement('div'); el.className=`floating ${cls||''}`; el.textContent=msg; el.style.left = (x||window.innerWidth/2)+"px"; el.style.top=(y||window.innerHeight/2)+"px"; document.body.appendChild(el); setTimeout(()=>el.remove(),900); }
+  function dropConfetti(){ const colors=['#A1C4FD','#C2E9FB','#FBC2EB','#A6C1EE']; for(let i=0;i<60;i++){ const c=document.createElement('div'); c.className='confetti'; c.style.setProperty('--c',colors[Math.floor(Math.random()*colors.length)]); c.style.left=Math.random()*100+'%'; c.style.animationDelay=(Math.random()*0.3)+'s'; confetti.appendChild(c); } setTimeout(()=>confetti.innerHTML='',2100); }
+
+  // ===================== Build UI =====================
+  function buildBins(){
+    binsWrap.innerHTML='';
+    STAGES.forEach((s,idx)=>{
+      const bin=document.createElement('section');
+      bin.className='glass rounded-2xl border-2 border-dashed border-gray-300 p-3 md:p-4 min-h-[7.5rem] flex flex-col';
+      bin.dataset.type=s.id; bin.role='region'; bin.ariaLabel=s.label;
+      bin.innerHTML=`<h3 class="text-base md:text-lg font-semibold text-center mb-2 ${s.color}">${s.label} <span class="text-xs text-gray-500">[${s.key}]</span></h3>
+        <div class="zone flex-1 flex flex-col gap-2" role="list" aria-describedby="bin-${s.id}"></div>`;
+      // drag events
+      const zone = bin.querySelector('.zone');
+      zone.addEventListener('dragover', (e)=>{ e.preventDefault(); zone.classList.add('drop-hover'); });
+      zone.addEventListener('dragleave', ()=> zone.classList.remove('drop-hover'));
+      zone.addEventListener('drop', (e)=>{ e.preventDefault(); zone.classList.remove('drop-hover'); const id=e.dataTransfer.getData('text/plain'); const card=document.getElementById(id); if(!card) return; placeCard(card, bin.dataset.type, zone, e.clientX, e.clientY); });
+      binsWrap.appendChild(bin);
+    });
+  }
+
+  function buildRail(parts){
+    rail.innerHTML='';
+    shuffle(parts).forEach((p,i)=>{
+      const id = `card-${i}`;
+      const card=document.createElement('article');
+      card.className='card bg-white/80 border-2 border-transparent hover:border-gray-300 rounded-xl p-3 md:p-4 shadow-sm min-w-[260px] max-w-[320px] outline-none focus:ring-2 focus:ring-blue-400';
+      card.textContent=p.text; card.dataset.type=p.type; card.id=id; card.draggable=true; card.tabIndex=0; card.setAttribute('role','listitem');
+      // show stage in teacher mode
+      if(teacherToggle.checked){ const tag=document.createElement('div'); tag.className='mt-2 text-xs font-semibold text-blue-700'; tag.textContent=`(${p.type})`; card.appendChild(tag); }
+      // drag
+      card.addEventListener('dragstart', (e)=>{ card.classList.add('dragging'); e.dataTransfer.setData('text/plain', id); });
+      card.addEventListener('dragend', ()=> card.classList.remove('dragging'));
+      // keyboard pick/drop
+      card.addEventListener('keydown', (e)=>{
+        if(e.key==='Enter' || e.key===' '){ e.preventDefault(); if(holding && holding===card){ holding=null; card.classList.remove('ring-4','ring-orange-400'); return; } holding=card; flashText('Picked', null,null,'text-slate-700'); card.classList.add('ring-4','ring-orange-400'); }
+        const idxKey = ['1','2','3','4','5'].indexOf(e.key);
+        if(holding===card && idxKey>-1){ const stage=STAGES[idxKey].id; const bin = [...binsWrap.querySelectorAll('[data-type]')].find(b=>b.dataset.type===stage); const zone=bin.querySelector('.zone'); placeCard(card, stage, zone); card.classList.remove('ring-4','ring-orange-400'); holding=null; }
+      });
+      rail.appendChild(card);
+    });
+  }
+
+  // ===================== Game Logic =====================
+  function placeCard(card, targetType, zone, x, y){
+    const correct = card.dataset.type === targetType;
+    if(correct){ zone.appendChild(card); score+=10; scoreEl.textContent=score; playGood(); flashText('Great!', x, y, 'text-emerald-600'); }
+    else{ // snap back to rail
+      rail.appendChild(card); card.classList.add('bad'); setTimeout(()=>card.classList.remove('bad'),400); playBad(); flashText('Try again', x, y, 'text-rose-600'); }
+    checkWin();
+  }
+
+  function checkWin(){
+    // All cards placed correctly = no cards left in rail and every bin contains only correct types
+    const anyLeft = rail.querySelectorAll('.card').length>0;
+    if(anyLeft) return;
+    let allGood = true;
+    binsWrap.querySelectorAll('[data-type]').forEach(bin=>{
+      const t = bin.dataset.type; bin.classList.remove('good','bad');
+      const wrong = [...bin.querySelectorAll('.card')].some(c=>c.dataset.type!==t);
+      if(wrong){ allGood=false; bin.classList.add('bad'); }
+      else{ bin.classList.add('good'); }
+    });
+    if(allGood){
+      clearInterval(timerId); playWin(); dropConfetti();
+      const best = bestTimes[storyIndex];
+      if(!best || timer < best){ bestTimes[storyIndex]=timer; localStorage.setItem('narrativeBestTimes', JSON.stringify(bestTimes)); }
+      showModal('Great job!', `You sorted all parts correctly. Final score: <b>${score}</b><br>Time: <b>${fmtTime(timer)}</b>`);
+      updateBest();
+    }
+  }
+
+  function showModal(title, html){ modalTitle.textContent=title; modalText.innerHTML=html; modal.showModal(); }
+
+  function updateBest(){ const best = bestTimes[storyIndex]; bestEl.textContent = (best? fmtTime(best): '—'); }
+
+  function startTimer(){ clearInterval(timerId); timer=0; timerEl.textContent=fmtTime(timer); timerId=setInterval(()=>{ timer++; timerEl.textContent=fmtTime(timer); },1000); }
+
+  function setStory(idx){ storyIndex = idx; score=0; hints=2; scoreEl.textContent=score; hintsEl.textContent=hints; buildBins(); buildRail(STORIES[storyIndex].parts); startTimer(); updateBest(); }
+
+  // ===================== Hints / Export =====================
+  hintBtn.addEventListener('click', ()=>{
+    if(hints<=0) return;
+    // prefer incorrect card already placed, else first rail card
+    let targetCard=null, targetBin=null;
+    binsWrap.querySelectorAll('[data-type]').forEach(bin=>{
+      const wrong = [...bin.querySelectorAll('.card')].find(c=>c.dataset.type!==bin.dataset.type);
+      if(!targetCard && wrong){ targetCard=wrong; targetBin=document.querySelector(`[data-type="${wrong.dataset.type}"] .zone`); }
+    });
+    if(!targetCard){ targetCard=rail.querySelector('.card'); if(targetCard){ targetBin=document.querySelector(`[data-type="${targetCard.dataset.type}"] .zone`); } }
+    if(targetBin){ targetBin.classList.add('ring','ring-blue-400'); setTimeout(()=>targetBin.classList.remove('ring','ring-blue-400'),900); hints--; hintsEl.textContent=hints; }
+  });
+
+  exportBtn.addEventListener('click', ()=>{
+    const rows=[['Story','Card','Placed In','Correct']];
+    const st = STORIES[storyIndex].title;
+    STAGES.forEach(s=>{
+      const bin=document.querySelector(`[data-type="${s.id}"] .zone`);
+      [...bin.querySelectorAll('.card')].forEach(c=>{
+        rows.push([st, c.textContent, s.id, (c.dataset.type===s.id)]);
+      });
+    });
+    const csv = rows.map(r=>r.map(x=>`"${String(x).replaceAll('"','""')}"`).join(',')).join('\n');
+    const blob = new Blob([csv],{type:'text/csv'}); const url=URL.createObjectURL(blob);
+    const a=document.createElement('a'); a.href=url; a.download=`narrative_results_${Date.now()}.csv`; a.click(); URL.revokeObjectURL(url);
+  });
+
+  // ===================== Controls =====================
+  resetBtn.addEventListener('click', ()=> setStory(storyIndex));
+  nextBtn.addEventListener('click', ()=> setStory( (storyIndex+1)%STORIES.length ));
+  soundToggle.addEventListener('change', (e)=>{ soundOn = e.target.checked; if(soundOn) startTone(); });
+  reducedToggle.addEventListener('change', (e)=>{
+    document.querySelectorAll('.animated').forEach(el=> el.classList.toggle('animated', !e.target.checked));
+    // we keep CSS keyframes guarded by prefers-reduced-motion as well
+  });
+  teacherToggle.addEventListener('change', ()=> setStory(storyIndex));
+
+  // Number key shortcuts 1–5 to send focused (picked) card
+  document.addEventListener('keydown', (e)=>{
+    const idx=['1','2','3','4','5'].indexOf(e.key);
+    if(idx>-1 && holding){ const stage=STAGES[idx].id; const bin = [...binsWrap.querySelectorAll('[data-type]')].find(b=>b.dataset.type===stage); placeCard(holding, stage, bin.querySelector('.zone')); holding.classList.remove('ring-4','ring-orange-400'); holding=null; }
+  });
+
+  // Story select & custom story
+  function populateSelect(){ storySel.innerHTML=''; STORIES.forEach((s,i)=>{ const opt=document.createElement('option'); opt.value=i; opt.textContent=s.title; storySel.appendChild(opt); }); storySel.value=storyIndex; }
+  storySel.addEventListener('change', (e)=> setStory(parseInt(e.target.value,10)) );
+
+  addStoryBtn.addEventListener('click', ()=>{
+    try{
+      const obj = JSON.parse(customJson.value);
+      if(!obj.title || !Array.isArray(obj.parts) || obj.parts.length===0) throw new Error('Missing title or parts');
+      const valid = new Set(STAGES.map(s=>s.id));
+      obj.parts.forEach(p=>{ if(!valid.has(p.type)) throw new Error('Invalid type: '+p.type); });
+      STORIES.push(obj); populateSelect(); storySel.value = STORIES.length-1; setStory(STORIES.length-1);
+      customJson.value=''; showModal('Story added','Your custom story was added and loaded.');
+    }catch(err){ showModal('Invalid JSON', 'Please check your JSON. '+err.message); }
+  });
+
+  // ===================== Init =====================
+  function init(){
+    populateSelect(); buildBins(); setStory(0);
+  }
+  init();
+  </script>
+</body>
+</html>
